@@ -86,7 +86,6 @@ def main():
                 time_taken = time.time() - start_time
                 # Add time-based reward if finished successfully
                 if not car.crashed:
-                    print("did not crash")
                     time_reward = calculate_time_reward(time_taken)
                     total_reward += time_reward
                     if time_taken < best_time:

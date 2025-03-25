@@ -1,8 +1,11 @@
 import numpy as np
+import time
 
 class Car:
     def __init__(self, track):
         self.track = track
+        self.best_time = float('inf')  # Initialize best time as infinity
+        self.start_time = 0  # Track when the episode starts
         self.reset()
         
     def reset(self):
@@ -14,9 +17,10 @@ class Car:
         self.acceleration = 0.2
         self.deceleration = 0.1
         self.turn_speed = 0.1
-        self.crashed = False  # New flag to track if car has crashed
+        self.crashed = False 
         self.distance_traveled = 0  # Track total distance traveled
         self.last_position = self.position.copy()  # For calculating distance
+        self.start_time = time.time()  # Reset start time
         
     def get_state(self):
         """Get the current state of the car."""
@@ -49,14 +53,17 @@ class Car:
         self.position += self.speed * np.array([np.cos(self.angle), np.sin(self.angle)])
         
         # Calculate distance traveled
-        self.distance_traveled += np.linalg.norm(self.position - self.last_position)
+        distance_moved = np.linalg.norm(self.position - self.last_position)
+        self.distance_traveled += distance_moved
         
         # Check if car is out of bounds
         if (self.position[0] < 0 or self.position[0] >= self.track.width or 
             self.position[1] < 0 or self.position[1] >= self.track.height):
             self.crashed = True
-            self.reset()  # Reset car to starting position
-            return self.get_state(), -20, True  # Large negative reward for going out of bounds
+            # Calculate a severe negative reward that's proportional to the distance traveled
+            # This ensures the car can't accumulate positive rewards by going out of bounds
+            crash_reward = -50 - (self.distance_traveled * 0.1)  # Base penalty plus distance penalty
+            return self.get_state(), crash_reward, True
         
         # Check if car is on track
         is_on_track = self.track.is_on_track(self.position)
@@ -65,7 +72,7 @@ class Car:
         reward = self._calculate_reward(is_on_track)
         
         # Check if finish line is reached
-        done = self._check_finish_line() and not self.crashed
+        done = self._check_finish_line() or self.crashed
         
         return self.get_state(), reward, done
     
@@ -89,10 +96,22 @@ class Car:
         if min_distance < 10:  # If any sensor is too close to a wall
             reward -= (10 - min_distance) * 0.5  # Penalty increases as distance decreases
             
+        # Add penalty for exceeding best time
+        current_time = time.time() - self.start_time
+        if self.best_time != float('inf') and current_time > self.best_time:
+            time_excess = current_time - self.best_time
+            reward -= time_excess * 2  # Penalty of 2 points per second over best time
+            
         return reward
     
     def _check_finish_line(self):
         """Check if the car has reached the finish line."""
         # Check if car is close enough to finish line
         distance_to_finish = np.linalg.norm(self.position - self.track.finish_pos)
-        return distance_to_finish < 20  # Within 20 pixels of finish line 
+        if distance_to_finish < 40:  # Within 20 pixels of finish line
+            # Update best time if this is a new best
+            current_time = time.time() - self.start_time
+            if current_time < self.best_time:
+                self.best_time = current_time
+            return True
+        return False 
